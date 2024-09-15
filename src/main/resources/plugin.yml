@@ -1,0 +1,12 @@
+name: Calendar
+version: '${project.version}'
+main: me.sialim.calendar.Calendar
+api-version: '1.21'
+depend: [PlaceholderAPI]
+commands:
+  setdate:
+    usage: /setdate YYYY-MM-DD
+  pause:
+    usage: /pause
+  resume:
+    usage: /resume
