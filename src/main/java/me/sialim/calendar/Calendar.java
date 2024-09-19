@@ -9,6 +9,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.event.world.TimeSkipEvent;
 import org.bukkit.event.world.WorldLoadEvent;
 import org.bukkit.event.world.WorldSaveEvent;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -282,6 +283,20 @@ public final class Calendar extends JavaPlugin implements Listener, CommandExecu
         if (command.startsWith("/time")) {
             e.getPlayer().sendMessage("The /time command is disabled on this server.");
             e.setCancelled(true);
+        }
+    }
+
+    @EventHandler
+    public void onTimeSkip(TimeSkipEvent e) {
+        if (e.getSkipReason() == TimeSkipEvent.SkipReason.NIGHT_SKIP) {
+            World w = e.getWorld();
+            long currentTime = w.getTime();
+
+            if (currentTime < 18000) {
+                LocalDate date = worldDates.getOrDefault(w.getName(), LocalDate.of(476, 1, 1));
+                date = date.plusDays(1);
+                worldDates.put(w.getName(), date);
+            }
         }
     }
 }
