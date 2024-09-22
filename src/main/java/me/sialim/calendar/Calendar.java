@@ -299,4 +299,8 @@ public final class Calendar extends JavaPlugin implements Listener, CommandExecu
             }
         }
     }
+
+    public LocalDate getWorldDate(World world) {
+        return worldDates.getOrDefault(world.getName(), LocalDate.of(476, 1, 1));
+    }
 }

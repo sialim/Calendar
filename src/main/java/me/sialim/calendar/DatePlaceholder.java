@@ -7,6 +7,8 @@ import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 
+import java.time.LocalDate;
+
 public class DatePlaceholder extends PlaceholderExpansion {
     private final Calendar plugin;
 
@@ -53,6 +55,13 @@ public class DatePlaceholder extends PlaceholderExpansion {
             if (world != null) {
                 return plugin.getFormattedTime(world);
             }
+        } else if (identifier.startsWith("formatted_date_dm_world_")) { // New placeholder for day/month/year for specific world
+            String worldName = identifier.substring("formatted_date_dm_world_".length());
+            World world = Bukkit.getServer().getWorld(worldName);
+            if (world != null) {
+                LocalDate date = plugin.getWorldDate(world);
+                return date.getDayOfMonth() + "/" + date.getMonthValue() + "/" + date.getYear();
+            }
         }
         return null;
     }
@@ -70,6 +79,13 @@ public class DatePlaceholder extends PlaceholderExpansion {
             World world = Bukkit.getServer().getWorld(worldName);
             if (world != null) {
                 return plugin.getFormattedTime(world);
+            }
+        } else if (identifier.startsWith("formatted_date_dm_world_")) { // New placeholder for day/month/year for specific world
+            String worldName = identifier.substring("formatted_date_dm_world_".length());
+            World world = Bukkit.getServer().getWorld(worldName);
+            if (world != null) {
+                LocalDate date = plugin.getWorldDate(world);
+                return date.getDayOfMonth() + "/" + date.getMonthValue() + "/" + date.getYear();
             }
         }
         return null;
