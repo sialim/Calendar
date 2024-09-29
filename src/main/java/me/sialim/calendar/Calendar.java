@@ -1,40 +1,52 @@
 package me.sialim.calendar;
 
+import net.advancedplugins.seasons.api.AdvancedSeasonsAPI;
 import org.bukkit.ChatColor;
 import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.TabCompleter;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.world.TimeSkipEvent;
 import org.bukkit.event.world.WorldLoadEvent;
 import org.bukkit.event.world.WorldSaveEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.jetbrains.annotations.NotNull;
 
+import javax.annotation.Nullable;
 import java.io.*;
 import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.Year;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
-public final class Calendar extends JavaPlugin implements Listener, CommandExecutor {
+public final class Calendar extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
+    public AdvancedSeasonsAPI api = new AdvancedSeasonsAPI();
+    public PlayerDataManager playerDataManager;
     private static final String DATE_FOLDER = "world_dates/";
     private static final String TICK_FILE = "world_ticks/";
+    private static final String PLAYER_BIRTHDAY_FILE = "player_birthdays.txt";
     private Map<String, LocalDate> worldDates = new HashMap<>();
     private Map<String, Long> lastDayTicks = new HashMap<>();
     private boolean isPaused = false;
+
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
         loadDates();
         loadLastDayTicks();
+
+        playerDataManager = new PlayerDataManager(this);
 
         File dataFolder = getDataFolder();
         if (!dataFolder.exists()) {
@@ -60,6 +72,12 @@ public final class Calendar extends JavaPlugin implements Listener, CommandExecu
         getCommand("pause").setExecutor(this);
         getCommand("resume").setExecutor(this);
 
+        getCommand("temperature").setExecutor(this);
+        getCommand("temperature").setTabCompleter(this);
+
+        getCommand("date").setExecutor(this);
+        getCommand("date").setTabCompleter(this);
+
         getServer().getPluginManager().registerEvents(this, this);
     }
 
@@ -67,6 +85,7 @@ public final class Calendar extends JavaPlugin implements Listener, CommandExecu
     public void onDisable() {
         saveDates();
         saveLastDayTicks();
+        playerDataManager.savePlayerData();
     }
 
     private void loadDates() {
@@ -162,7 +181,20 @@ public final class Calendar extends JavaPlugin implements Listener, CommandExecu
         return month + " " + dayWithSuffix + ", " + year;
     }
 
-    public String getFormattedTime(World world) {
+    public String getFormattedDate(World world, Player p) {
+        LocalDate date = worldDates.getOrDefault(world.getName(), LocalDate.of(476, 1, 1));
+        PlayerDataManager.PlayerPreferences preferences = playerDataManager.getPlayerPreferences(p.getUniqueId());
+
+        DateTimeFormatter formatter;
+        try {
+            formatter = DateTimeFormatter.ofPattern(preferences.getDateFormat());
+        } catch (IllegalArgumentException e) {
+            formatter = DateTimeFormatter.ofPattern("MMMM/d/yyyy");
+        }
+        return date.format(formatter);
+    }
+
+    public String getFormattedTime(World world, Player p) {
         long currentTick = world.getTime();
         long ticksInDay = currentTick % 24000;
 
@@ -172,8 +204,11 @@ public final class Calendar extends JavaPlugin implements Listener, CommandExecu
         long hours = totalMinutes / 60;
         long minutes = totalMinutes % 60;
 
+        PlayerDataManager.PlayerPreferences preferences = playerDataManager.getPlayerPreferences(p.getUniqueId());
+        String timeFormat = preferences.getTimeFormat().equals("24") ? "HH:mm" : "h:mm a";
+
         LocalTime time = LocalTime.of((int) hours, (int) minutes);
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("h:mm a");
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern(timeFormat);
 
         return time.format(formatter);
     }
@@ -205,6 +240,8 @@ public final class Calendar extends JavaPlugin implements Listener, CommandExecu
 
                 getLogger().info("New day in world " + world.getName() + ": " + date.toString());
 
+                updateSeasons(world, date);
+
                 if (getServer().getPluginManager().isPluginEnabled("PlaceholderAPI")) {
                     new DatePlaceholder(this).register();
                 }
@@ -235,6 +272,40 @@ public final class Calendar extends JavaPlugin implements Listener, CommandExecu
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (sender instanceof Player p) {
+            UUID uuid = p.getUniqueId();
+            PlayerDataManager.PlayerPreferences preferences = playerDataManager.getPlayerPreferences(uuid);
+
+            if (command.getName().equals("date") && args.length == 2 && args[0].equals("format")) {
+                preferences.setDateFormat(args[1]);
+                playerDataManager.setPlayerPreferences(uuid, preferences);
+                p.sendMessage(ChatColor.GREEN + "Date format set to " + args[1]);
+                return true;
+            }
+            if (command.getName().equals("temperature") && args.length == 2 && args[0].equals("set")) {
+                String unit = args[1].toLowerCase();
+                if (unit.equals("celsius") || unit.equals("fahrenheit")) {
+                    preferences.setTemperatureUnit(unit);
+                    playerDataManager.setPlayerPreferences(uuid, preferences);
+                    p.sendMessage(ChatColor.GREEN + "Temperature unit set to " + unit);
+                    return true;
+                } else {
+                    p.sendMessage(ChatColor.RED + "Invalid temperature unit. Use 'celsius' or 'fahrenheit'.");
+                    return false;
+                }
+            }
+            if (command.getName().equals("date") && args.length == 2 && args[0].equals("time")) {
+                if (args[1].equals("12") || args[1].equals("24")) {
+                    preferences.setTimeFormat(args[1]);
+                    playerDataManager.setPlayerPreferences(uuid, preferences);
+                    p.sendMessage(ChatColor.GREEN + "Time format set to " + args[1] + "-hour");
+                    return true;
+                } else {
+                    p.sendMessage(ChatColor.RED + "Invalid time format. Use '12' or '24'.");
+                    return false;
+                }
+            }
+        }
         if (command.getName().equalsIgnoreCase("pause") && sender.hasPermission("calendar.pause")) {
             isPaused = true;
             sender.sendMessage(ChatColor.GREEN + "Calendar paused.");
@@ -276,6 +347,25 @@ public final class Calendar extends JavaPlugin implements Listener, CommandExecu
         return false;
     }
 
+    @Override
+    public @Nullable List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, @NotNull String[] args) {
+        if (command.getName().equalsIgnoreCase("temperature")) {
+            if (args.length == 1) {
+                return Arrays.asList("set", "get");
+            } else if (args.length == 2 && args[0].equalsIgnoreCase("set")) {
+                return Arrays.asList("celsius", "fahrenheit");
+            }
+        } else if (command.getName().equalsIgnoreCase("date")) {
+            if (args.length == 1) {
+                return Arrays.asList("format");
+            } else if (args.length == 2 && args[0].equalsIgnoreCase("format")) {
+                return Arrays.asList("dd/MM/yyy", "MM/dd/yyy", "yyy-MM-dd");
+            }
+        }
+
+        return null;
+    }
+
     @EventHandler(priority = EventPriority.HIGH)
     public void onCommandPreprocess(PlayerCommandPreprocessEvent e) {
         String command = e.getMessage().toLowerCase();
@@ -302,5 +392,50 @@ public final class Calendar extends JavaPlugin implements Listener, CommandExecu
 
     public LocalDate getWorldDate(World world) {
         return worldDates.getOrDefault(world.getName(), LocalDate.of(476, 1, 1));
+    }
+
+    private void updateSeasons(World world, LocalDate date) {
+        int month = date.getMonthValue();
+        int day = date.getDayOfMonth();
+
+        if (month == 12 && day == 1) {
+            api.setSeason("WINTER", world);
+        } else if (month == 12 && day == 23) {
+            api.setSeason("WINTER_TRANSITION_1", world);
+        } else if (month == 1 && day == 14) {
+            api.setSeason("WINTER_TRANSITION_2", world);
+        } else if (month == 2 && day == 5) {
+            api.setSeason("WINTER_TRANSITION_3", world);
+        }
+
+        else if (month == 3 && day == 1) {
+            api.setSeason("SPRING", world);
+        } else if (month == 3 && day == 24) {
+            api.setSeason("SPRING_TRANSITION_1", world);
+        } else if (month == 4 && day == 16) {
+            api.setSeason("SPRING_TRANSITION_2", world);
+        } else if (month == 5 && day == 9) {
+            api.setSeason("SPRING_TRANSITION_3", world);
+        }
+
+        else if (month == 6 && day == 1) {
+            api.setSeason("SUMMER", world);
+        } else if (month == 6 && day == 24) {
+            api.setSeason("SUMMER_TRANSITION_1", world);
+        } else if (month == 7 && day == 17) {
+            api.setSeason("SUMMER_TRANSITION_2", world);
+        } else if (month == 8 && day == 9) {
+            api.setSeason("SUMMER_TRANSITION_3", world);
+        }
+
+        else if (month == 9 && day == 1) {
+            api.setSeason("FALL", world);
+        } else if (month == 9 && day == 24) {
+            api.setSeason("FALL_TRANSITION_1", world);
+        } else if (month == 10 && day == 17) {
+            api.setSeason("FALL_TRANSITION_2", world);
+        } else if (month == 11 && day == 9) {
+            api.setSeason("FALL_TRANSITION_3", world);
+        }
     }
 }

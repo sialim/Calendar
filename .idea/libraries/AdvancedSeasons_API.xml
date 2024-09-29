@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="AdvancedSeasons-API">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/../../EdgeDownloads/AdvancedSeasons-API.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

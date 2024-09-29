@@ -23,8 +23,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.8.1</version>
                 <configuration>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
+                    <source>16</source>
+                    <target>16</target>
                 </configuration>
             </plugin>
             <plugin>
@@ -76,6 +76,13 @@
             <artifactId>placeholderapi</artifactId>
             <version>2.11.6</version>
             <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>net.advancedplugins.seasons.api</groupId>
+            <artifactId>advancedseasonsapi</artifactId>
+            <version>2.11.6</version>
+            <scope>system</scope>
+            <systemPath>D:/EdgeDownloads/AdvancedSeasons-API.jar</systemPath>
         </dependency>
     </dependencies>
 </project>

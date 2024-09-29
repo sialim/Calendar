@@ -2,7 +2,7 @@ name: Calendar
 version: '${project.version}'
 main: me.sialim.calendar.Calendar
 api-version: '1.21'
-depend: [PlaceholderAPI]
+depend: [PlaceholderAPI, AdvancedSeasons]
 commands:
   setdate:
     usage: /setdate YYYY-MM-DD
@@ -10,3 +10,9 @@ commands:
     usage: /pause
   resume:
     usage: /resume
+  date:
+    description: "Set date format or time format."
+    usage: "/date format [format] or /date time [12|24]"
+  temperature:
+    description: "Set temperature preference."
+    usage: "/temperature set [celsius|fahrenheit]"
