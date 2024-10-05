@@ -1,6 +1,7 @@
 package me.sialim.calendar;
 
 import net.advancedplugins.seasons.api.AdvancedSeasonsAPI;
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.World;
 import org.bukkit.command.Command;
@@ -12,6 +13,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.world.TimeSkipEvent;
 import org.bukkit.event.world.WorldLoadEvent;
@@ -32,6 +34,7 @@ import java.util.*;
 public final class Calendar extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
     public AdvancedSeasonsAPI api = new AdvancedSeasonsAPI();
     public PlayerDataManager playerDataManager;
+    public PlayerAgeManager playerAgeManager;
     private static final String DATE_FOLDER = "world_dates/";
     private static final String TICK_FILE = "world_ticks/";
     private static final String PLAYER_BIRTHDAY_FILE = "player_birthdays.txt";
@@ -47,6 +50,7 @@ public final class Calendar extends JavaPlugin implements Listener, CommandExecu
         loadLastDayTicks();
 
         playerDataManager = new PlayerDataManager(this);
+        playerAgeManager = new PlayerAgeManager(this);
 
         File dataFolder = getDataFolder();
         if (!dataFolder.exists()) {
@@ -63,10 +67,27 @@ public final class Calendar extends JavaPlugin implements Listener, CommandExecu
                 if (!isPaused) {
                     for (World world : getServer().getWorlds()) {
                         updateDate(world);
+                        //updateSeasons(world, getWorldDate(world));
+                    }
+                    for (Player p : Bukkit.getOnlinePlayers()) {
+                        if (calculateAge(p.getUniqueId(), true) < 15) {
+                            playerAgeManager.setSize(p.getUniqueId(), calculateSize(p.getUniqueId()));
+                        }
                     }
                 }
             }
         }.runTaskTimer(this, 0L, 20L);
+
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (!isPaused) {
+                    for (World world : getServer().getWorlds()) {
+                        updateSeasons(world, getWorldDate(world));
+                    }
+                }
+            }
+        }.runTaskTimer(this, 0L, 1200L);
 
         getCommand("setdate").setExecutor(this);
         getCommand("pause").setExecutor(this);
@@ -86,6 +107,7 @@ public final class Calendar extends JavaPlugin implements Listener, CommandExecu
         saveDates();
         saveLastDayTicks();
         playerDataManager.savePlayerData();
+        playerAgeManager.savePlayerAges();
     }
 
     private void loadDates() {
@@ -240,8 +262,6 @@ public final class Calendar extends JavaPlugin implements Listener, CommandExecu
 
                 getLogger().info("New day in world " + world.getName() + ": " + date.toString());
 
-                updateSeasons(world, date);
-
                 if (getServer().getPluginManager().isPluginEnabled("PlaceholderAPI")) {
                     new DatePlaceholder(this).register();
                 }
@@ -351,15 +371,17 @@ public final class Calendar extends JavaPlugin implements Listener, CommandExecu
     public @Nullable List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, @NotNull String[] args) {
         if (command.getName().equalsIgnoreCase("temperature")) {
             if (args.length == 1) {
-                return Arrays.asList("set", "get");
+                return Arrays.asList("set");
             } else if (args.length == 2 && args[0].equalsIgnoreCase("set")) {
                 return Arrays.asList("celsius", "fahrenheit");
             }
         } else if (command.getName().equalsIgnoreCase("date")) {
             if (args.length == 1) {
-                return Arrays.asList("format");
-            } else if (args.length == 2 && args[0].equalsIgnoreCase("format")) {
+                return Arrays.asList("format", "time");
+            } else if (args.length == 2 && args[0].equals("format")) {
                 return Arrays.asList("dd/MM/yyy", "MM/dd/yyy", "yyy-MM-dd");
+            } else if (args.length == 2 && args[0].equals("time")) {
+                return Arrays.asList("12", "24");
             }
         }
 
@@ -397,45 +419,118 @@ public final class Calendar extends JavaPlugin implements Listener, CommandExecu
     private void updateSeasons(World world, LocalDate date) {
         int month = date.getMonthValue();
         int day = date.getDayOfMonth();
+        String command = "advancedseasons setseason ";
 
-        if (month == 12 && day == 1) {
-            api.setSeason("WINTER", world);
-        } else if (month == 12 && day == 23) {
-            api.setSeason("WINTER_TRANSITION_1", world);
-        } else if (month == 1 && day == 14) {
-            api.setSeason("WINTER_TRANSITION_2", world);
-        } else if (month == 2 && day == 5) {
-            api.setSeason("WINTER_TRANSITION_3", world);
+        if ((month == 12 && day < 23)) {
+            command += "FALL_TRANSITION_3";
+        } else if ((month == 12 && day >= 23) || (month == 1 && day < 14)) {
+            command += "WINTER";
+        } else if ((month == 1 && day >= 14) || (month == 2 && day < 5)) {
+            command += "WINTER_TRANSITION_1";
+        } else if (month == 2 && day >= 5) {
+            command += "WINTER_TRANSITION_2";
         }
 
-        else if (month == 3 && day == 1) {
-            api.setSeason("SPRING", world);
-        } else if (month == 3 && day == 24) {
-            api.setSeason("SPRING_TRANSITION_1", world);
-        } else if (month == 4 && day == 16) {
-            api.setSeason("SPRING_TRANSITION_2", world);
-        } else if (month == 5 && day == 9) {
-            api.setSeason("SPRING_TRANSITION_3", world);
+        else if ((month == 3 && day < 24)) {
+            command += "WINTER_TRANSITION_3";
+        } else if ((month == 3 && day >= 24) || (month == 4 && day < 16)) {
+            command += "SPRING";
+        } else if ((month == 4 && day >= 16) && (month == 5 && day < 9)) {
+            command += "SPRING_TRANSITION_1";
+        } else if (month == 5 && day >= 9) {
+            command += "SPRING_TRANSITION_2";
         }
 
-        else if (month == 6 && day == 1) {
-            api.setSeason("SUMMER", world);
-        } else if (month == 6 && day == 24) {
-            api.setSeason("SUMMER_TRANSITION_1", world);
-        } else if (month == 7 && day == 17) {
-            api.setSeason("SUMMER_TRANSITION_2", world);
-        } else if (month == 8 && day == 9) {
-            api.setSeason("SUMMER_TRANSITION_3", world);
+        else if ((month == 6 && day < 24)) {
+            command += "SPRING_TRANSITION_3";
+        } else if ((month == 6 && day >= 24) && (month == 7 && day < 17)) {
+            command += "SUMMER";
+        } else if ((month == 7 && day >= 17) && (month == 8 && day < 9)) {
+            command += "SUMMER_TRANSITION_1";
+        } else if (month == 8 && day >= 9) {
+            command += "SUMMER_TRANSITION_2";
         }
 
-        else if (month == 9 && day == 1) {
-            api.setSeason("FALL", world);
-        } else if (month == 9 && day == 24) {
-            api.setSeason("FALL_TRANSITION_1", world);
-        } else if (month == 10 && day == 17) {
-            api.setSeason("FALL_TRANSITION_2", world);
-        } else if (month == 11 && day == 9) {
-            api.setSeason("FALL_TRANSITION_3", world);
+        else if ((month == 9 && day < 24)) {
+            command += "SUMMER_TRANSITION_3";
+        } else if ((month == 9 && day >= 24) && (month == 10 && day < 17)) {
+            command += "FALL";
+        } else if ((month == 10 && day >= 17) && (month == 11 && day < 9)) {
+            command += "FALL_TRANSITION_1";
+        } else if (month == 11 && day >= 9) {
+            command += "FALL_TRANSITION_2";
+        } else {
+            return;
         }
+
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command + " " + world.getName());
+    }
+
+    public String calculateAge(UUID uuid) {
+        LocalDate birthDate = playerAgeManager.getPlayerAge(uuid);
+        LocalDate currentDate = getWorldDate(Bukkit.getPlayer(uuid).getWorld());
+
+
+        if (birthDate.equals(currentDate)) {
+            return "0 days";
+        }
+
+        int years = currentDate.getYear() - birthDate.getYear();
+        int days = currentDate.getDayOfYear() - birthDate.getDayOfYear();
+
+        if (birthDate.getDayOfYear() > currentDate.getDayOfYear()) {
+            years--;
+            days += birthDate.lengthOfYear();
+        }
+
+        String yearText = years == 1 ? "1 year" : years + " years";
+        String dayText = days == 1 ? "1 day" : days + " days";
+
+        if (years > 0) {
+            return yearText + " " + ((days > 0) ? dayText : "");
+        } else {
+            return days > 0 ? dayText : "Born today";
+        }
+    }
+
+    public int calculateAge(UUID uuid, boolean bool) {
+        LocalDate birthDate = playerAgeManager.getPlayerAge(uuid);
+        LocalDate currentDate = getWorldDate(Bukkit.getPlayer(uuid).getWorld());
+
+        return currentDate.getYear() - birthDate.getYear();
+    }
+
+    public float calculateSize(UUID uuid) {
+        LocalDate birthDate = playerAgeManager.getPlayerAge(uuid);
+        LocalDate currentDate = getWorldDate(Bukkit.getPlayer(uuid).getWorld());
+
+        int currentAge = currentDate.getYear() - birthDate.getYear();
+        int maxAge = 15;
+        float minSize = 0.7f;
+
+        currentAge = Math.min(currentAge, maxAge);
+
+        double size = (playerAgeManager.getPlayerMaxSize(uuid) - minSize) * Math.sqrt((1.0 / maxAge) * currentAge) + minSize;
+        return (float) size;
+    }
+
+    @EventHandler public void onPlayerJoin(PlayerJoinEvent e) {
+        UUID uuid = e.getPlayer().getUniqueId();
+        LocalDate birthdate = playerAgeManager.getPlayerAge(uuid);
+
+        if (birthdate == null || playerAgeManager.getPlayerMaxSize(uuid) == 0.0f) {
+            birthdate = getWorldDate(e.getPlayer().getWorld());
+            playerAgeManager.setPlayerAge(uuid, birthdate);
+            playerAgeManager.rerollMaxSize(uuid);
+            playerAgeManager.savePlayerAges();
+        }
+    }
+
+    @EventHandler public void onPlayerRespawn(PlayerRespawnEvent e) {
+        UUID uuid = e.getPlayer().getUniqueId();
+        LocalDate birthdate = getWorldDate(e.getPlayer().getWorld());
+        playerAgeManager.setPlayerAge(uuid, birthdate);
+        playerAgeManager.rerollMaxSize(uuid);
+        playerAgeManager.savePlayerAges();
     }
 }
